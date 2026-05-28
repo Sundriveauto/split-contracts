@@ -250,3 +250,39 @@ fn test_multi_recipient_release() {
     assert_eq!(tk.balance(&r2), 200);
     assert_eq!(tk.balance(&r3), 300);
 }
+
+#[test]
+#[should_panic(expected = "insufficient contract balance")]
+fn test_release_panics_on_low_balance() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+    let tk = token_client(&env, &token_id);
+
+    let creator = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let drain = Address::generate(&env);
+
+    let stellar_asset = StellarAssetClient::new(&env, &token_id);
+    stellar_asset.mint(&payer, &200);
+
+    env.ledger().set_timestamp(1_000);
+
+    let mut recipients = Vec::new(&env);
+    recipients.push_back(recipient.clone());
+    let mut amounts = Vec::new(&env);
+    amounts.push_back(200_i128);
+
+    let id = c.create_invoice(&creator, &recipients, &amounts, &token_id, &9_999_u64);
+
+    // Pay partially — invoice stays Pending, contract holds 100.
+    c.pay(&payer, &id, &100_i128);
+
+    // Drain the contract's balance externally (simulates discrepancy).
+    // mock_all_auths allows the transfer from the contract address.
+    tk.transfer(&contract_id, &drain, &100_i128);
+
+    // Pay the remaining 100 — triggers auto-release, which should panic.
+    stellar_asset.mint(&payer, &100);
+    c.pay(&payer, &id, &100_i128);
+}

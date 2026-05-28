@@ -222,6 +222,12 @@ impl SplitContract {
     fn _release(env: &Env, invoice_id: u64, invoice: &mut Invoice) {
         let token_client = token::Client::new(env, &invoice.token);
 
+        let contract_balance = token_client.balance(&env.current_contract_address());
+        assert!(
+            contract_balance >= invoice.funded,
+            "insufficient contract balance"
+        );
+
         for (recipient, amount) in invoice.recipients.iter().zip(invoice.amounts.iter()) {
             token_client.transfer(&env.current_contract_address(), &recipient, &amount);
         }
