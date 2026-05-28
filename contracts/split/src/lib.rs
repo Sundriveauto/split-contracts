@@ -42,6 +42,35 @@ fn save_invoice(env: &Env, id: u64, invoice: &Invoice) {
         .set(&invoice_key(id), invoice);
 }
 
+/// Composite storage key for a group: (symbol, group_id).
+fn group_key(group_id: u64) -> (Symbol, u64) {
+    (symbol_short!("grp"), group_id)
+}
+
+fn load_group(env: &Env, group_id: u64) -> Vec<u64> {
+    env.storage()
+        .persistent()
+        .get(&group_key(group_id))
+        .expect("group not found")
+}
+
+/// Storage key mapping an invoice ID to its group ID.
+fn invoice_group_key(invoice_id: u64) -> (Symbol, u64) {
+    (symbol_short!("invgrp"), invoice_id)
+}
+
+/// Returns true only if every invoice in the group is fully funded.
+fn group_all_funded(env: &Env, group_id: u64) -> bool {
+    for id in load_group(env, group_id).iter() {
+        let inv = load_invoice(env, id);
+        let total: i128 = inv.amounts.iter().sum();
+        if inv.funded < total {
+            return false;
+        }
+    }
+    true
+}
+
 // ---------------------------------------------------------------------------
 // Contract
 // ---------------------------------------------------------------------------
@@ -154,9 +183,17 @@ impl SplitContract {
 
         events::payment_received(&env, invoice_id, &payer, amount);
 
-        // Auto-release if fully funded.
+        // Auto-release if fully funded (and group constraint satisfied).
         if invoice.funded >= total {
-            Self::_release(&env, invoice_id, &mut invoice);
+            let group_id: Option<u64> = env
+                .storage()
+                .persistent()
+                .get(&invoice_group_key(invoice_id));
+            if group_id.is_none_or(|gid| group_all_funded(&env, gid)) {
+                Self::_release(&env, invoice_id, &mut invoice);
+            } else {
+                save_invoice(&env, invoice_id, &invoice);
+            }
         } else {
             save_invoice(&env, invoice_id, &invoice);
         }
@@ -165,6 +202,7 @@ impl SplitContract {
     /// Release funds to all recipients once the invoice is fully funded.
     ///
     /// Can be called by anyone; validates full funding internally.
+    /// If the invoice belongs to a group, all members must be fully funded.
     pub fn release(env: Env, invoice_id: u64) {
         let mut invoice = load_invoice(&env, invoice_id);
 
@@ -176,7 +214,26 @@ impl SplitContract {
         let total: i128 = invoice.amounts.iter().sum();
         assert!(invoice.funded >= total, "invoice not fully funded");
 
-        Self::_release(&env, invoice_id, &mut invoice);
+        // Group check: all members must be fully funded before any releases.
+        let group_id: Option<u64> = env
+            .storage()
+            .persistent()
+            .get(&invoice_group_key(invoice_id));
+        if let Some(gid) = group_id {
+            assert!(
+                group_all_funded(&env, gid),
+                "group members not fully funded"
+            );
+            // Release every member in the group.
+            for id in load_group(&env, gid).iter() {
+                let mut inv = load_invoice(&env, id);
+                if inv.status == InvoiceStatus::Pending {
+                    Self::_release(&env, id, &mut inv);
+                }
+            }
+        } else {
+            Self::_release(&env, invoice_id, &mut invoice);
+        }
     }
 
     /// Refund all payers if the deadline has passed and the invoice is not fully funded.
@@ -212,6 +269,45 @@ impl SplitContract {
     /// Retrieve an invoice by ID.
     pub fn get_invoice(env: Env, invoice_id: u64) -> Invoice {
         load_invoice(&env, invoice_id)
+    }
+
+    /// Link multiple invoices into a group for all-or-nothing release.
+    ///
+    /// Returns the new group ID. All invoices must exist and be Pending.
+    pub fn create_invoice_group(env: Env, invoice_ids: Vec<u64>) -> u64 {
+        assert!(invoice_ids.len() >= 2, "group must have at least 2 invoices");
+
+        // Validate all invoices exist and are pending.
+        for id in invoice_ids.iter() {
+            let inv = load_invoice(&env, id);
+            assert!(
+                inv.status == InvoiceStatus::Pending,
+                "all invoices must be pending"
+            );
+        }
+
+        let group_id: u64 = env
+            .storage()
+            .persistent()
+            .get(&symbol_short!("grpcnt"))
+            .unwrap_or(0u64)
+            + 1;
+        env.storage()
+            .persistent()
+            .set(&symbol_short!("grpcnt"), &group_id);
+
+        env.storage()
+            .persistent()
+            .set(&group_key(group_id), &invoice_ids);
+
+        // Map each invoice → group.
+        for id in invoice_ids.iter() {
+            env.storage()
+                .persistent()
+                .set(&invoice_group_key(id), &group_id);
+        }
+
+        group_id
     }
 
     // -----------------------------------------------------------------------
