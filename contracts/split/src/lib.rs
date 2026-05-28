@@ -207,7 +207,32 @@ impl SplitContract {
         save_invoice(&env, id, &invoice);
         events::invoice_created(&env, id, &creator, total, &metadata);
 
-        id
+    /// Create up to 5 invoices in a single transaction (#44).
+    ///
+    /// # Panics
+    /// Panics with "batch limit exceeded" if more than 5 invoices are provided.
+    pub fn create_batch(
+        env: Env,
+        creator: Address,
+        invoices: Vec<CreateInvoiceParams>,
+    ) -> Vec<u64> {
+        creator.require_auth();
+        assert!(invoices.len() <= 5, "batch limit exceeded");
+
+        let mut ids: Vec<u64> = Vec::new(&env);
+        for params in invoices.iter() {
+            let id = Self::_create_invoice_inner(
+                &env,
+                creator.clone(),
+                params.recipients,
+                params.amounts,
+                params.token,
+                params.deadline,
+                None,
+            );
+            ids.push_back(id);
+        }
+        ids
     }
 
     /// Create a subscription chain of invoices for recurring monthly billing.
@@ -363,6 +388,7 @@ impl SplitContract {
         }
 
         invoice.status = InvoiceStatus::Refunded;
+        invoice.completion_time = Some(env.ledger().timestamp());
         save_invoice(&env, invoice_id, &invoice);
         let actor = env.current_contract_address();
         append_audit_entry(&env, invoice_id, symbol_short!("refund"), &actor);
@@ -512,7 +538,8 @@ impl SplitContract {
         let invoice = load_invoice(&env, invoice_id);
 
         assert!(
-            invoice.status == InvoiceStatus::Released || invoice.status == InvoiceStatus::Refunded,
+            invoice.status == InvoiceStatus::Released
+                || invoice.status == InvoiceStatus::Refunded,
             "invoice not finalized"
         );
 
@@ -725,6 +752,7 @@ impl SplitContract {
 
         // All transfers succeeded — persist state change now.
         invoice.status = InvoiceStatus::Released;
+        invoice.completion_time = Some(env.ledger().timestamp());
         save_invoice(env, invoice_id, invoice);
         append_audit_entry(env, invoice_id, symbol_short!("release"), actor);
         events::invoice_released(env, invoice_id, &invoice.recipients);
