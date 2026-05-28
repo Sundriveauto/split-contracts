@@ -46,8 +46,8 @@ pub struct SubscriptionParams {
     pub recipients: Vec<Address>,
     /// Amounts owed to each recipient (parallel to `recipients`).
     pub amounts: Vec<i128>,
-    /// USDC token contract address.
-    pub token: Address,
+    /// Token contract addresses per recipient (parallel to `recipients`).
+    pub tokens: Vec<Address>,
 }
 
 /// A completion proof for a finalized invoice.
@@ -76,8 +76,8 @@ pub struct Invoice {
     pub recipients: Vec<Address>,
     /// Amounts owed to each recipient (parallel to `recipients`).
     pub amounts: Vec<i128>,
-    /// USDC token contract address.
-    pub token: Address,
+    /// Token contract addresses per recipient (parallel to `recipients`).
+    pub tokens: Vec<Address>,
     /// Unix timestamp after which unfunded invoices can be refunded.
     pub deadline: u64,
     /// Total amount collected so far.
@@ -86,4 +86,6 @@ pub struct Invoice {
     pub status: InvoiceStatus,
     /// All payments made toward this invoice.
     pub payments: Vec<Payment>,
+    /// Whether the invoice is frozen by admin.
+    pub frozen: bool,
 }
