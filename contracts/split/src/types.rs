@@ -86,4 +86,8 @@ pub struct Invoice {
     pub status: InvoiceStatus,
     /// All payments made toward this invoice.
     pub payments: Vec<Payment>,
+    /// If true, a new invoice is auto-created on release with the same params.
+    pub recurring: bool,
+    /// Original duration (deadline - creation timestamp) used to compute next deadline.
+    pub original_duration: u64,
 }
