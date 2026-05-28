@@ -594,4 +594,46 @@ impl SplitContract {
                 .remove(&subscription_params_key(invoice_id));
         }
     }
+
+    /// Claim the vested portion of a drip invoice for a recipient.
+    ///
+    /// Transfers `elapsed / drip_duration * amount - already_claimed` to the recipient.
+    /// After `drip_duration` seconds the full amount is claimable.
+    pub fn drip_claim(env: Env, invoice_id: u64, recipient: Address) {
+        let mut invoice = load_invoice(&env, invoice_id);
+
+        assert!(
+            invoice.status == InvoiceStatus::Released,
+            "invoice not released"
+        );
+        let drip_duration = invoice.drip_duration.expect("no drip schedule");
+        let release_ts = invoice.release_timestamp.expect("no release timestamp");
+
+        // Find recipient index.
+        let idx = invoice
+            .recipients
+            .iter()
+            .position(|r| r == recipient)
+            .expect("recipient not found") as u32;
+
+        let total_amount = invoice.amounts.get(idx).unwrap();
+        let already_claimed = invoice.claimed.get(idx).unwrap();
+
+        let elapsed = env.ledger().timestamp().saturating_sub(release_ts);
+        let vested = if elapsed >= drip_duration {
+            total_amount
+        } else {
+            // integer arithmetic: elapsed * total_amount / drip_duration
+            (elapsed as i128) * total_amount / (drip_duration as i128)
+        };
+
+        let claimable = vested - already_claimed;
+        assert!(claimable > 0, "nothing to claim");
+
+        invoice.claimed.set(idx, already_claimed + claimable);
+        save_invoice(&env, invoice_id, &invoice);
+
+        let token_client = token::Client::new(&env, &invoice.token);
+        token_client.transfer(&env.current_contract_address(), &recipient, &claimable);
+    }
 }
