@@ -652,3 +652,118 @@ fn test_bonus_pool_zero_behaves_identically() {
     assert_eq!(c.get_invoice(&id).status, InvoiceStatus::Released);
     assert_eq!(tk.balance(&recipient), 200);
 }
+
+#[test]
+#[should_panic(expected = "group members not fully funded")]
+fn test_group_partial_fund_blocks_release() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    let stellar_asset = StellarAssetClient::new(&env, &token_id);
+    stellar_asset.mint(&payer, &1_000);
+
+    env.ledger().set_timestamp(1_000);
+
+    let mut rec1 = Vec::new(&env);
+    rec1.push_back(r1.clone());
+    let mut amt1 = Vec::new(&env);
+    amt1.push_back(100_i128);
+
+    let mut rec2 = Vec::new(&env);
+    rec2.push_back(r2.clone());
+    let mut amt2 = Vec::new(&env);
+    amt2.push_back(200_i128);
+
+    let id1 = c.create_invoice(&creator, &rec1, &amt1, &token_id, &9_999_u64);
+    let id2 = c.create_invoice(&creator, &rec2, &amt2, &token_id, &9_999_u64);
+
+    let mut ids = Vec::new(&env);
+    ids.push_back(id1);
+    ids.push_back(id2);
+    c.create_invoice_group(&ids);
+
+    // Fund only invoice 1 fully.
+    c.pay(&payer, &id1, &100_i128);
+
+    // Attempt to release invoice 1 — should panic because invoice 2 is not funded.
+    c.release(&id1);
+}
+
+#[test]
+fn test_group_all_funded_releases_both() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+    let tk = token_client(&env, &token_id);
+
+    let creator = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    let stellar_asset = StellarAssetClient::new(&env, &token_id);
+    stellar_asset.mint(&payer, &1_000);
+
+    env.ledger().set_timestamp(1_000);
+
+    let mut rec1 = Vec::new(&env);
+    rec1.push_back(r1.clone());
+    let mut amt1 = Vec::new(&env);
+    amt1.push_back(100_i128);
+
+    let mut rec2 = Vec::new(&env);
+    rec2.push_back(r2.clone());
+    let mut amt2 = Vec::new(&env);
+    amt2.push_back(200_i128);
+
+    let id1 = c.create_invoice(&creator, &rec1, &amt1, &token_id, &9_999_u64);
+    let id2 = c.create_invoice(&creator, &rec2, &amt2, &token_id, &9_999_u64);
+
+    let mut ids = Vec::new(&env);
+    ids.push_back(id1);
+    ids.push_back(id2);
+    c.create_invoice_group(&ids);
+
+    // Fund both invoices fully.
+    c.pay(&payer, &id1, &100_i128);
+    c.pay(&payer, &id2, &200_i128);
+
+    // Release via either member — both should be released.
+    c.release(&id1);
+
+    assert_eq!(c.get_invoice(&id1).status, InvoiceStatus::Released);
+    assert_eq!(c.get_invoice(&id2).status, InvoiceStatus::Released);
+    assert_eq!(tk.balance(&r1), 100);
+    assert_eq!(tk.balance(&r2), 200);
+}
+
+#[test]
+fn test_non_grouped_invoice_unaffected() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+    let tk = token_client(&env, &token_id);
+
+    let creator = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let stellar_asset = StellarAssetClient::new(&env, &token_id);
+    stellar_asset.mint(&payer, &300);
+
+    env.ledger().set_timestamp(1_000);
+
+    let mut recipients = Vec::new(&env);
+    recipients.push_back(recipient.clone());
+    let mut amounts = Vec::new(&env);
+    amounts.push_back(300_i128);
+
+    let id = c.create_invoice(&creator, &recipients, &amounts, &token_id, &9_999_u64);
+    c.pay(&payer, &id, &300_i128);
+
+    assert_eq!(c.get_invoice(&id).status, InvoiceStatus::Released);
+    assert_eq!(tk.balance(&recipient), 300);
+}

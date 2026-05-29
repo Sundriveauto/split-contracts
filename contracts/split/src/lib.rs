@@ -90,6 +90,35 @@ fn require_admin(env: &Env, caller: &Address) {
     caller.require_auth();
 }
 
+/// Composite storage key for a group: (symbol, group_id).
+fn group_key(group_id: u64) -> (Symbol, u64) {
+    (symbol_short!("grp"), group_id)
+}
+
+fn load_group(env: &Env, group_id: u64) -> Vec<u64> {
+    env.storage()
+        .persistent()
+        .get(&group_key(group_id))
+        .expect("group not found")
+}
+
+/// Storage key mapping an invoice ID to its group ID.
+fn invoice_group_key(invoice_id: u64) -> (Symbol, u64) {
+    (symbol_short!("invgrp"), invoice_id)
+}
+
+/// Returns true only if every invoice in the group is fully funded.
+fn group_all_funded(env: &Env, group_id: u64) -> bool {
+    for id in load_group(env, group_id).iter() {
+        let inv = load_invoice(env, id);
+        let total: i128 = inv.amounts.iter().sum();
+        if inv.funded < total {
+            return false;
+        }
+    }
+    true
+}
+
 // ---------------------------------------------------------------------------
 // Contract
 // ---------------------------------------------------------------------------
