@@ -426,6 +426,178 @@ fn test_audit_log_with_extend() {
     assert_eq!(log.get_unchecked(0).actor, creator);
 }
 
+// ---------------------------------------------------------------------------
+// Add recipient
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_add_recipient_appends_to_invoice() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    env.ledger().set_timestamp(1_000);
+
+    let id = make_invoice(&env, &c, &creator, &r1, 100, &token_id, 9_999);
+
+    c.add_recipient(&creator, &id, &r2, &200_i128);
+
+    let invoice = c.get_invoice(&id);
+    assert_eq!(invoice.recipients.len(), 2);
+    assert_eq!(invoice.recipients.get_unchecked(0), r1);
+    assert_eq!(invoice.recipients.get_unchecked(1), r2);
+    assert_eq!(invoice.amounts.get_unchecked(0), 100);
+    assert_eq!(invoice.amounts.get_unchecked(1), 200);
+    assert_eq!(invoice.funded, 0);
+}
+
+#[test]
+fn test_add_recipient_audit_entry() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    env.ledger().set_timestamp(1_000);
+
+    let id = make_invoice(&env, &c, &creator, &r1, 100, &token_id, 9_999);
+    c.add_recipient(&creator, &id, &r2, &200_i128);
+
+    let log = c.get_audit_log(&id);
+    assert_eq!(log.len(), 1);
+    assert_eq!(log.get_unchecked(0).action, symbol_short!("add_rec"));
+    assert_eq!(log.get_unchecked(0).actor, creator);
+}
+
+#[test]
+#[should_panic(expected = "only creator can add recipients")]
+fn test_add_recipient_non_creator_panics() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let other = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    env.ledger().set_timestamp(1_000);
+
+    let id = make_invoice(&env, &c, &creator, &r1, 100, &token_id, 9_999);
+    c.add_recipient(&other, &id, &r2, &200_i128);
+}
+
+#[test]
+#[should_panic(expected = "cannot add recipient after payment received")]
+fn test_add_recipient_after_payment_panics() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    StellarAssetClient::new(&env, &token_id).mint(&payer, &100);
+    env.ledger().set_timestamp(1_000);
+
+    let id = make_invoice(&env, &c, &creator, &r1, 100, &token_id, 9_999);
+    c.pay(&payer, &id, &50_i128, &0_u64);
+    c.add_recipient(&creator, &id, &r2, &200_i128);
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_add_recipient_zero_amount_panics() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    env.ledger().set_timestamp(1_000);
+
+    let id = make_invoice(&env, &c, &creator, &r1, 100, &token_id, 9_999);
+    c.add_recipient(&creator, &id, &r2, &0_i128);
+}
+
+#[test]
+fn test_add_recipient_then_full_payment() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+    let tk = token_client(&env, &token_id);
+
+    let creator = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    StellarAssetClient::new(&env, &token_id).mint(&payer, &500);
+    env.ledger().set_timestamp(1_000);
+
+    let id = make_invoice(&env, &c, &creator, &r1, 100, &token_id, 9_999);
+    c.add_recipient(&creator, &id, &r2, &200_i128);
+
+    // Pay total (100 + 200 = 300).
+    c.pay(&payer, &id, &300_i128, &0_u64);
+
+    assert_eq!(c.get_invoice(&id).status, InvoiceStatus::Released);
+    assert_eq!(tk.balance(&r1), 100);
+    assert_eq!(tk.balance(&r2), 200);
+}
+
+#[test]
+fn test_add_recipient_multiple() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+    let r3 = Address::generate(&env);
+
+    env.ledger().set_timestamp(1_000);
+
+    let id = make_invoice(&env, &c, &creator, &r1, 100, &token_id, 9_999);
+    c.add_recipient(&creator, &id, &r2, &200_i128);
+    c.add_recipient(&creator, &id, &r3, &300_i128);
+
+    let invoice = c.get_invoice(&id);
+    assert_eq!(invoice.recipients.len(), 3);
+    assert_eq!(invoice.amounts.get_unchecked(0), 100);
+    assert_eq!(invoice.amounts.get_unchecked(1), 200);
+    assert_eq!(invoice.amounts.get_unchecked(2), 300);
+}
+
+#[test]
+#[should_panic(expected = "invoice is not pending")]
+fn test_add_recipient_after_release_panics() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    StellarAssetClient::new(&env, &token_id).mint(&payer, &200);
+    env.ledger().set_timestamp(1_000);
+
+    let id = make_invoice(&env, &c, &creator, &r1, 200, &token_id, 9_999);
+    c.pay(&payer, &id, &200_i128, &0_u64);
+    // After auto-release the invoice is Released, not Pending.
+    c.add_recipient(&creator, &id, &r2, &100_i128);
+}
+
+// ---------------------------------------------------------------------------
+// Subscription
+// ---------------------------------------------------------------------------
+
 #[test]
 fn test_create_subscription() {
     let (env, contract_id, token_id) = setup();

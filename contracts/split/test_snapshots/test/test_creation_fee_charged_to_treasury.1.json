@@ -152,9 +152,25 @@
                     },
                     {
                       "key": {
+                        "symbol": "co_signers"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "prerequisite_id"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
                     },
                     {
                       "key": {
@@ -396,6 +412,20 @@
                     },
                     {
                       "key": {
+                        "symbol": "approved"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "approver"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "bonus_max_payers"
                       },
                       "val": {
@@ -431,6 +461,14 @@
                     {
                       "key": {
                         "symbol": "co_creators"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "co_signers"
                       },
                       "val": {
                         "vec": []
@@ -525,6 +563,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "signatures"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -553,6 +607,14 @@
                       },
                       "val": {
                         "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "version"
+                      },
+                      "val": {
+                        "u32": 1
                       }
                     }
                   ]

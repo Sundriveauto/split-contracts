@@ -155,6 +155,10 @@ pub struct Invoice {
     pub required_signatures: u32,
     /// Co-signers that have already approved release.
     pub signatures: Vec<Address>,
+    /// Optional approver address that must approve before release (issue #25).
+    pub approver: Option<Address>,
+    /// Whether the approver has approved the invoice (issue #25).
+    pub approved: bool,
 }
 
 impl Invoice {
@@ -186,6 +190,8 @@ impl Invoice {
             co_signers: Vec::new(env),
             required_signatures: 0,
             signatures: Vec::new(env),
+            approver: None,
+            approved: false,
         }
     }
 }

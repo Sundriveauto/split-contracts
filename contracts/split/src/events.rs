@@ -37,3 +37,11 @@ pub fn payer_refunded(env: &Env, invoice_id: u64, payer: &Address, amount: i128)
         (payer.clone(), amount),
     );
 }
+
+/// Emitted when a recipient is added to a pending invoice.
+pub fn recipient_added(env: &Env, invoice_id: u64, recipient: &Address, amount: i128) {
+    env.events().publish(
+        (symbol_short!("add_rec"), invoice_id),
+        (recipient.clone(), amount),
+    );
+}

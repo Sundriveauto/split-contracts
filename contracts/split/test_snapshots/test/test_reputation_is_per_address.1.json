@@ -146,12 +146,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "approver"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
                         "symbol": "bonus_max_payers"
                       },
                       "val": {

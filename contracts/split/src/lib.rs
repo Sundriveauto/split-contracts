@@ -422,6 +422,8 @@ impl SplitContract {
             co_signers,
             required_signatures,
             signatures: Vec::new(env),
+            approver: None,
+            approved: false,
         };
 
         save_invoice(env, id, &invoice);
@@ -1017,6 +1019,45 @@ impl SplitContract {
         invoice.deadline = new_deadline;
         save_invoice(&env, invoice_id, &invoice);
         append_audit_entry(&env, invoice_id, symbol_short!("extend"), &caller);
+    }
+
+    // -----------------------------------------------------------------------
+    // Add recipient
+    // -----------------------------------------------------------------------
+
+    /// Append a new recipient with a fixed amount to a pending invoice.
+    /// Only the creator may call this, and only before any payment has been
+    /// received.
+    pub fn add_recipient(
+        env: Env,
+        caller: Address,
+        invoice_id: u64,
+        recipient: Address,
+        amount: i128,
+    ) {
+        require_not_paused(&env);
+        caller.require_auth();
+
+        let mut invoice = load_invoice(&env, invoice_id);
+
+        assert!(
+            invoice.status == InvoiceStatus::Pending,
+            "invoice is not pending"
+        );
+        assert!(invoice.creator == caller, "only creator can add recipients");
+        assert!(invoice.funded == 0, "cannot add recipient after payment received");
+        assert!(amount > 0, "amount must be positive");
+
+        let token = invoice.tokens.get(0).expect("no token");
+
+        invoice.recipients.push_back(recipient.clone());
+        invoice.amounts.push_back(amount);
+        invoice.tokens.push_back(token);
+        invoice.claimed.push_back(0i128);
+
+        save_invoice(&env, invoice_id, &invoice);
+        append_audit_entry(&env, invoice_id, symbol_short!("add_rec"), &caller);
+        events::recipient_added(&env, invoice_id, &recipient, amount);
     }
 
     // -----------------------------------------------------------------------
