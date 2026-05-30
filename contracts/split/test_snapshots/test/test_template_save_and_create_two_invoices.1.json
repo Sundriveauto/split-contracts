@@ -486,6 +486,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "co_signers"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "completion_time"
                       },
                       "val": {
@@ -610,6 +618,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "signatures"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -638,6 +662,14 @@
                       },
                       "val": {
                         "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "version"
+                      },
+                      "val": {
+                        "u32": 1
                       }
                     }
                   ]
@@ -746,6 +778,14 @@
                     {
                       "key": {
                         "symbol": "co_creators"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "co_signers"
                       },
                       "val": {
                         "vec": []
@@ -877,6 +917,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "signatures"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -905,6 +961,14 @@
                       },
                       "val": {
                         "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "version"
+                      },
+                      "val": {
+                        "u32": 1
                       }
                     }
                   ]

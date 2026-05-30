@@ -13,7 +13,7 @@ use soroban_sdk::{
 };
 use types::{
     AuditEntry, CompletionProof, CreateInvoiceParams, Invoice, InvoiceOptions, InvoiceStatus,
-    InvoiceTemplate, Payment, SubscriptionParams, Tranche,
+    InvoiceTemplate, LegacyInvoice, Payment, SubscriptionParams, Tranche,
 };
 
 // ---------------------------------------------------------------------------
@@ -238,6 +238,42 @@ impl SplitContract {
     }
 
     // -----------------------------------------------------------------------
+    // Schema migration
+    // -----------------------------------------------------------------------
+
+    /// Migrate a legacy (pre-version) invoice to the current schema.
+    ///
+    /// Reads the stored invoice under the old layout, rewrites it with
+    /// `version = 1` and all other fields preserved. Safe to call multiple
+    /// times — already-migrated invoices are a no-op. Requires admin auth.
+    pub fn migrate_invoice(env: Env, admin: Address, invoice_id: u64) {
+        require_admin(&env, &admin);
+
+        // Already migrated?
+        if let Some(invoice) = env
+            .storage()
+            .persistent()
+            .get::<_, Invoice>(&invoice_key(invoice_id))
+        {
+            if invoice.version >= 1 {
+                return;
+            }
+        }
+
+        // Read legacy (pre-version) format and upgrade.
+        let legacy: LegacyInvoice = env
+            .storage()
+            .persistent()
+            .get(&invoice_key(invoice_id))
+            .expect("invoice not found");
+
+        let invoice = Invoice::from_legacy(legacy, &env);
+        env.storage()
+            .persistent()
+            .set(&invoice_key(invoice_id), &invoice);
+    }
+
+    // -----------------------------------------------------------------------
     // Invoice creation
     // -----------------------------------------------------------------------
 
@@ -270,6 +306,8 @@ impl SplitContract {
             options.bonus_max_payers,
             options.prerequisite_id,
             options.tranches,
+            options.co_signers,
+            options.required_signatures,
         )
     }
 
@@ -286,6 +324,8 @@ impl SplitContract {
         bonus_max_payers: u32,
         prerequisite_id: Option<u64>,
         tranches: Vec<Tranche>,
+        co_signers: Vec<Address>,
+        required_signatures: u32,
     ) -> u64 {
         assert!(
             recipients.len() == amounts.len(),
@@ -357,6 +397,7 @@ impl SplitContract {
         }
 
         let invoice = Invoice {
+            version: 1u32,
             creator: creator.clone(),
             co_creators,
             recipients: recipients.clone(),
@@ -377,6 +418,9 @@ impl SplitContract {
             prerequisite_id,
             tranches,
             released_bps: 0,
+            co_signers,
+            required_signatures,
+            signatures: Vec::new(env),
         };
 
         save_invoice(env, id, &invoice);
@@ -409,6 +453,8 @@ impl SplitContract {
                 0,
                 None,
                 Vec::new(&env),
+                Vec::new(&env),
+                0,
             );
             ids.push_back(id);
         }
@@ -450,6 +496,8 @@ impl SplitContract {
             0,
             None,
             Vec::new(&env),
+            Vec::new(&env),
+            0,
         );
 
         if months > 1 {
@@ -542,7 +590,10 @@ impl SplitContract {
                 .persistent()
                 .has(&invoice_group_key(invoice_id));
             let guarded =
-                invoice.prerequisite_id.is_some() || !invoice.tranches.is_empty() || in_group;
+                invoice.prerequisite_id.is_some()
+                    || !invoice.tranches.is_empty()
+                    || in_group
+                    || !invoice.co_signers.is_empty();
             if guarded {
                 save_invoice(env, invoice_id, &invoice);
             } else {
@@ -551,6 +602,39 @@ impl SplitContract {
         } else {
             save_invoice(env, invoice_id, &invoice);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Co-signer approval & Release
+    // -----------------------------------------------------------------------
+
+    /// Record a co-signer's approval to release an invoice.
+    ///
+    /// Only addresses in `co_signers` may call this. Once `required_signatures`
+    /// unique co-signers have approved, the release guard is satisfied.
+    pub fn sign_release(env: Env, invoice_id: u64, signer: Address) {
+        require_not_paused(&env);
+        signer.require_auth();
+
+        let mut invoice = load_invoice(&env, invoice_id);
+
+        assert!(
+            invoice.status == InvoiceStatus::Pending,
+            "invoice is not pending"
+        );
+        assert!(!invoice.co_signers.is_empty(), "no co-signers required");
+        assert!(
+            invoice.co_signers.iter().any(|c| c == signer),
+            "not an authorized co-signer"
+        );
+        assert!(
+            !invoice.signatures.iter().any(|s| s == signer),
+            "already signed"
+        );
+
+        invoice.signatures.push_back(signer.clone());
+        save_invoice(&env, invoice_id, &invoice);
+        append_audit_entry(&env, invoice_id, symbol_short!("sign_rel"), &signer);
     }
 
     // -----------------------------------------------------------------------
@@ -591,6 +675,14 @@ impl SplitContract {
             .get::<(Symbol, u64), u64>(&invoice_group_key(invoice_id))
         {
             assert!(group_all_funded(&env, group_id), "group members not fully funded");
+        }
+
+        // Co-signer approval check.
+        if !invoice.co_signers.is_empty() {
+            assert!(
+                invoice.signatures.len() >= invoice.required_signatures,
+                "not enough co-signer approvals"
+            );
         }
 
         Self::_release(&env, invoice_id, &mut invoice, &caller);
@@ -758,6 +850,8 @@ impl SplitContract {
                 0,
                 None,
                 Vec::new(env),
+                Vec::new(env),
+                0,
             );
             env.storage()
                 .persistent()
@@ -957,6 +1051,8 @@ impl SplitContract {
             0,
             None,
             Vec::new(&env),
+            Vec::new(&env),
+            0,
         )
     }
 

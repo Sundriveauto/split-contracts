@@ -148,9 +148,25 @@
                     },
                     {
                       "key": {
+                        "symbol": "co_signers"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "prerequisite_id"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
                     },
                     {
                       "key": {
@@ -243,10 +259,26 @@
                     },
                     {
                       "key": {
+                        "symbol": "co_signers"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "prerequisite_id"
                       },
                       "val": {
                         "u64": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
                       }
                     },
                     {
@@ -529,6 +561,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "co_signers"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "completion_time"
                       },
                       "val": "void"
@@ -616,6 +656,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "signatures"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -644,6 +700,14 @@
                       },
                       "val": {
                         "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "version"
+                      },
+                      "val": {
+                        "u32": 1
                       }
                     }
                   ]
@@ -752,6 +816,14 @@
                     {
                       "key": {
                         "symbol": "co_creators"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "co_signers"
                       },
                       "val": {
                         "vec": []
@@ -883,6 +955,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "signatures"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -911,6 +999,14 @@
                       },
                       "val": {
                         "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "version"
+                      },
+                      "val": {
+                        "u32": 1
                       }
                     }
                   ]
