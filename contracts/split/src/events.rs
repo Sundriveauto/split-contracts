@@ -1,4 +1,5 @@
 use soroban_sdk::{symbol_short, Address, Bytes, Env, Vec};
+use crate::types::InvoiceCompletedEvent;
 
 /// Emitted when a new invoice is created.
 pub fn invoice_created(env: &Env, invoice_id: u64, creator: &Address, total: i128, metadata: &Option<Bytes>) {
@@ -43,5 +44,14 @@ pub fn recipient_added(env: &Env, invoice_id: u64, recipient: &Address, amount: 
     env.events().publish(
         (symbol_short!("add_rec"), invoice_id),
         (recipient.clone(), amount),
+    );
+}
+
+/// Emitted when an invoice reaches a terminal state (Released / Refunded).
+/// Carries a rich payload optimised for off-chain webhook / indexer processing.
+pub fn invoice_completed(env: &Env, invoice_id: u64, event: &InvoiceCompletedEvent) {
+    env.events().publish(
+        (symbol_short!("inv_cmpl"), invoice_id),
+        event.clone(),
     );
 }

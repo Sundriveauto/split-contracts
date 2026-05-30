@@ -89,6 +89,18 @@ pub struct InvoiceOptions {
     pub required_signatures: u32,
 }
 
+/// Rich payload emitted when an invoice completes (released or refunded).
+/// Designed for off-chain webhook / indexer consumption.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct InvoiceCompletedEvent {
+    pub invoice_id: u64,
+    pub creator: Address,
+    pub total: i128,
+    pub recipient_count: u32,
+    pub completion_timestamp: u64,
+}
+
 /// Legacy invoice layout used by stored invoices created before the `version`
 /// field was added. Kept for on-chain migration so old data can be
 /// deserialised and re-saved in the current schema.

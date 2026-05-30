@@ -12,8 +12,9 @@ use soroban_sdk::{
     contract, contractimpl, symbol_short, token, Address, Bytes, BytesN, Env, Map, Symbol, Vec,
 };
 use types::{
-    AuditEntry, CompletionProof, CreateInvoiceParams, Invoice, InvoiceOptions, InvoiceStatus,
-    InvoiceTemplate, LegacyInvoice, Payment, SubscriptionParams, Tranche,
+    AuditEntry, CompletionProof, CreateInvoiceParams, Invoice, InvoiceCompletedEvent,
+    InvoiceOptions, InvoiceStatus, InvoiceTemplate, LegacyInvoice, Payment, SubscriptionParams,
+    Tranche,
 };
 
 // ---------------------------------------------------------------------------
@@ -697,6 +698,19 @@ impl SplitContract {
         Self::_release(&env, invoice_id, &mut invoice, &caller);
     }
 
+    fn _build_completed_event(invoice_id: u64, invoice: &Invoice) -> InvoiceCompletedEvent {
+        let total: i128 = invoice.amounts.iter().sum();
+        InvoiceCompletedEvent {
+            invoice_id,
+            creator: invoice.creator.clone(),
+            total,
+            recipient_count: invoice.recipients.len() as u32,
+            completion_timestamp: invoice
+                .completion_time
+                .unwrap_or_else(|| invoice.deadline),
+        }
+    }
+
     fn _release(env: &Env, invoice_id: u64, invoice: &mut Invoice, actor: &Address) {
         if invoice.tranches.is_empty() {
             Self::_release_full(env, invoice_id, invoice, actor);
@@ -759,6 +773,7 @@ impl SplitContract {
             invoice.completion_time = Some(now);
             append_audit_entry(env, invoice_id, symbol_short!("release"), actor);
             events::invoice_released(env, invoice_id, &invoice.recipients);
+            events::invoice_completed(env, invoice_id, &Self::_build_completed_event(invoice_id, invoice));
         }
 
         save_invoice(env, invoice_id, invoice);
@@ -842,6 +857,7 @@ impl SplitContract {
                         save_invoice(env, member_id, &member);
                         append_audit_entry(env, member_id, symbol_short!("release"), actor);
                         events::invoice_released(env, member_id, &member.recipients);
+                        events::invoice_completed(env, member_id, &Self::_build_completed_event(member_id, &member));
                     }
                 }
             }
@@ -852,6 +868,7 @@ impl SplitContract {
         save_invoice(env, invoice_id, invoice);
         append_audit_entry(env, invoice_id, symbol_short!("release"), actor);
         events::invoice_released(env, invoice_id, &invoice.recipients);
+        events::invoice_completed(env, invoice_id, &Self::_build_completed_event(invoice_id, invoice));
 
         // Spin up next subscription invoice if one is scheduled.
         if let Some(params) = env
