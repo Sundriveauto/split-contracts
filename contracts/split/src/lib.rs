@@ -210,14 +210,14 @@ impl SplitContract {
             }
         }
 
-        // Read legacy format and upgrade.
+        // Read legacy (pre-version) format and upgrade.
         let legacy: LegacyInvoice = env
             .storage()
             .persistent()
             .get(&invoice_key(invoice_id))
             .expect("invoice not found");
 
-        let invoice: Invoice = legacy.into();
+        let invoice = Invoice::from_legacy(legacy, &env);
         env.storage()
             .persistent()
             .set(&invoice_key(invoice_id), &invoice);
@@ -256,6 +256,8 @@ impl SplitContract {
             options.bonus_max_payers,
             options.prerequisite_id,
             options.tranches,
+            options.co_signers,
+            options.required_signatures,
         )
     }
 
@@ -272,6 +274,8 @@ impl SplitContract {
         bonus_max_payers: u32,
         prerequisite_id: Option<u64>,
         tranches: Vec<Tranche>,
+        co_signers: Vec<Address>,
+        required_signatures: u32,
     ) -> u64 {
         assert!(
             recipients.len() == amounts.len(),
@@ -292,6 +296,13 @@ impl SplitContract {
         if !tranches.is_empty() {
             let total_bps: u32 = tranches.iter().map(|t| t.basis_points).sum();
             assert!(total_bps == 10_000, "tranches must sum to 10000 basis points");
+        }
+
+        if !co_signers.is_empty() {
+            assert!(
+                required_signatures <= co_signers.len() as u32,
+                "required_signatures exceeds number of co-signers"
+            );
         }
 
         let id: u64 = env
@@ -343,6 +354,9 @@ impl SplitContract {
             prerequisite_id,
             tranches,
             released_bps: 0,
+            co_signers,
+            required_signatures,
+            signatures: Vec::new(env),
         };
 
         save_invoice(env, id, &invoice);
@@ -375,6 +389,8 @@ impl SplitContract {
                 0,
                 None,
                 Vec::new(&env),
+                Vec::new(&env),
+                0,
             );
             ids.push_back(id);
         }
@@ -416,6 +432,8 @@ impl SplitContract {
             0,
             None,
             Vec::new(&env),
+            Vec::new(&env),
+            0,
         );
 
         if months > 1 {
@@ -508,7 +526,10 @@ impl SplitContract {
                 .persistent()
                 .has(&invoice_group_key(invoice_id));
             let guarded =
-                invoice.prerequisite_id.is_some() || !invoice.tranches.is_empty() || in_group;
+                invoice.prerequisite_id.is_some()
+                    || !invoice.tranches.is_empty()
+                    || in_group
+                    || !invoice.co_signers.is_empty();
             if guarded {
                 save_invoice(env, invoice_id, &invoice);
             } else {
@@ -517,6 +538,39 @@ impl SplitContract {
         } else {
             save_invoice(env, invoice_id, &invoice);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Co-signer approval & Release
+    // -----------------------------------------------------------------------
+
+    /// Record a co-signer's approval to release an invoice.
+    ///
+    /// Only addresses in `co_signers` may call this. Once `required_signatures`
+    /// unique co-signers have approved, the release guard is satisfied.
+    pub fn sign_release(env: Env, invoice_id: u64, signer: Address) {
+        require_not_paused(&env);
+        signer.require_auth();
+
+        let mut invoice = load_invoice(&env, invoice_id);
+
+        assert!(
+            invoice.status == InvoiceStatus::Pending,
+            "invoice is not pending"
+        );
+        assert!(!invoice.co_signers.is_empty(), "no co-signers required");
+        assert!(
+            invoice.co_signers.iter().any(|c| c == signer),
+            "not an authorized co-signer"
+        );
+        assert!(
+            !invoice.signatures.iter().any(|s| s == signer),
+            "already signed"
+        );
+
+        invoice.signatures.push_back(signer.clone());
+        save_invoice(&env, invoice_id, &invoice);
+        append_audit_entry(&env, invoice_id, symbol_short!("sign_rel"), &signer);
     }
 
     // -----------------------------------------------------------------------
@@ -557,6 +611,14 @@ impl SplitContract {
             .get::<(Symbol, u64), u64>(&invoice_group_key(invoice_id))
         {
             assert!(group_all_funded(&env, group_id), "group members not fully funded");
+        }
+
+        // Co-signer approval check.
+        if !invoice.co_signers.is_empty() {
+            assert!(
+                invoice.signatures.len() >= invoice.required_signatures,
+                "not enough co-signer approvals"
+            );
         }
 
         Self::_release(&env, invoice_id, &mut invoice, &caller);
@@ -724,6 +786,8 @@ impl SplitContract {
                 0,
                 None,
                 Vec::new(env),
+                Vec::new(env),
+                0,
             );
             env.storage()
                 .persistent()
@@ -923,6 +987,8 @@ impl SplitContract {
             0,
             None,
             Vec::new(&env),
+            Vec::new(&env),
+            0,
         )
     }
 

@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -83,6 +83,10 @@ pub struct InvoiceOptions {
     pub prerequisite_id: Option<u64>,
     /// Issue #23: graduated release schedule; empty = release all at once.
     pub tranches: Vec<Tranche>,
+    /// Co-signers whose approval is required before release.
+    pub co_signers: Vec<Address>,
+    /// How many co-signer approvals are needed (≤ `co_signers.len()`).
+    pub required_signatures: u32,
 }
 
 /// Legacy invoice layout used by stored invoices created before the `version`
@@ -143,12 +147,22 @@ pub struct Invoice {
     pub tranches: Vec<Tranche>,
     /// Issue #23: cumulative basis points already distributed (0–10 000).
     pub released_bps: u32,
+    /// Co-signers that must approve release before funds can be distributed.
+    /// If non-empty, `required_signatures` of them must call `sign_release()`.
+    pub co_signers: Vec<Address>,
+    /// How many co-signer approvals are required to unlock release.
+    /// Must be ≤ `co_signers.len()`.
+    pub required_signatures: u32,
+    /// Co-signers that have already approved release.
+    pub signatures: Vec<Address>,
 }
 
-impl From<LegacyInvoice> for Invoice {
-    fn from(old: LegacyInvoice) -> Self {
+impl Invoice {
+    /// Upgrade a legacy (pre-version) invoice to the current schema.
+    /// New fields are filled with their default (empty / zero) values.
+    pub fn from_legacy(old: LegacyInvoice, env: &Env) -> Self {
         Invoice {
-            version: 1,
+            version: 2,
             creator: old.creator,
             co_creators: old.co_creators,
             recipients: old.recipients,
@@ -169,6 +183,9 @@ impl From<LegacyInvoice> for Invoice {
             prerequisite_id: old.prerequisite_id,
             tranches: old.tranches,
             released_bps: old.released_bps,
+            co_signers: Vec::new(env),
+            required_signatures: 0,
+            signatures: Vec::new(env),
         }
     }
 }

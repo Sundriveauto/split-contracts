@@ -148,9 +148,25 @@
                     },
                     {
                       "key": {
+                        "symbol": "co_signers"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "prerequisite_id"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
                     },
                     {
                       "key": {
@@ -481,6 +497,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "co_signers"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "completion_time"
                       },
                       "val": {
@@ -601,6 +625,22 @@
                       },
                       "val": {
                         "u32": 10000
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "signatures"
+                      },
+                      "val": {
+                        "vec": []
                       }
                     },
                     {

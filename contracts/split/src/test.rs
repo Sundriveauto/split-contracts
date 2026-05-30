@@ -38,14 +38,16 @@ fn token_client<'a>(env: &'a Env, token_id: &Address) -> TokenClient<'a> {
 
 fn default_options(env: &Env) -> InvoiceOptions {
     InvoiceOptions {
-        co_creators: Vec::new(env),
-        allow_early_withdrawal: false,
-        bonus_pool: 0,
-        bonus_max_payers: 0,
-        prerequisite_id: None,
-        tranches: Vec::new(env),
+            co_creators: Vec::new(env),
+            allow_early_withdrawal: false,
+            bonus_pool: 0,
+            bonus_max_payers: 0,
+            prerequisite_id: None,
+            tranches: Vec::new(env),
+            co_signers: Vec::new(env),
+            required_signatures: 0,
+        }
     }
-}
 
 /// Create a basic single-recipient invoice with default optional params.
 fn make_invoice(
@@ -601,6 +603,8 @@ fn test_bonus_pool_distributed_to_first_payer() {
             bonus_max_payers: 1,
             prerequisite_id: None,
             tranches: Vec::new(&env),
+            co_signers: Vec::new(&env),
+            required_signatures: 0,
         },
     );
 
@@ -837,6 +841,8 @@ fn test_release_blocked_by_prerequisite() {
             bonus_max_payers: 0,
             prerequisite_id: Some(id_a),
             tranches: Vec::new(&env),
+            co_signers: Vec::new(&env),
+            required_signatures: 0,
         },
     );
 
@@ -880,6 +886,8 @@ fn test_release_succeeds_after_prerequisite_released() {
             bonus_max_payers: 0,
             prerequisite_id: Some(id_a),
             tranches: Vec::new(&env),
+            co_signers: Vec::new(&env),
+            required_signatures: 0,
         },
     );
 
@@ -956,6 +964,8 @@ fn test_tranches_partial_then_full_release() {
             bonus_max_payers: 0,
             prerequisite_id: None,
             tranches: tranches.clone(),
+            co_signers: Vec::new(&env),
+            required_signatures: 0,
         },
     );
 
@@ -1014,6 +1024,8 @@ fn test_release_before_any_tranche_unlocked_panics() {
             bonus_max_payers: 0,
             prerequisite_id: None,
             tranches: tranches.clone(),
+            co_signers: Vec::new(&env),
+            required_signatures: 0,
         },
     );
 
