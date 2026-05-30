@@ -13,7 +13,7 @@ use soroban_sdk::{
 };
 use types::{
     AuditEntry, CompletionProof, CreateInvoiceParams, Invoice, InvoiceOptions, InvoiceStatus,
-    InvoiceTemplate, Payment, SubscriptionParams, Tranche,
+    InvoiceTemplate, LegacyInvoice, Payment, SubscriptionParams, Tranche,
 };
 
 // ---------------------------------------------------------------------------
@@ -28,6 +28,15 @@ fn paused_key() -> Symbol {
 }
 fn fee_bps_key() -> Symbol {
     symbol_short!("fee_bps")
+}
+fn creation_fee_key() -> Symbol {
+    symbol_short!("crt_fee")
+}
+fn treasury_key() -> Symbol {
+    symbol_short!("treasury")
+}
+fn usdc_token_key() -> Symbol {
+    symbol_short!("usdc_tok")
 }
 fn counter_key() -> Symbol {
     symbol_short!("counter")
@@ -154,13 +163,17 @@ pub struct SplitContract;
 
 #[contractimpl]
 impl SplitContract {
-    /// Set the contract admin. Can only be called once.
-    pub fn initialize(env: Env, admin: Address) {
+    /// Set the contract admin, creation fee, treasury, and USDC token. Can only be called once.
+    pub fn initialize(env: Env, admin: Address, creation_fee: i128, treasury: Address, usdc_token: Address) {
         assert!(
             !env.storage().instance().has(&admin_key()),
             "already initialized"
         );
+        assert!(creation_fee >= 0, "creation_fee must be non-negative");
         env.storage().instance().set(&admin_key(), &admin);
+        env.storage().instance().set(&creation_fee_key(), &creation_fee);
+        env.storage().instance().set(&treasury_key(), &treasury);
+        env.storage().instance().set(&usdc_token_key(), &usdc_token);
         env.storage().persistent().set(&paused_key(), &false);
     }
 
@@ -185,6 +198,79 @@ impl SplitContract {
     pub fn unpause(env: Env, admin: Address) {
         require_admin(&env, &admin);
         env.storage().persistent().set(&paused_key(), &false);
+    }
+
+    /// Update the creation fee. Requires admin auth.
+    pub fn set_creation_fee(env: Env, admin: Address, creation_fee: i128) {
+        require_admin(&env, &admin);
+        assert!(creation_fee >= 0, "creation_fee must be non-negative");
+        env.storage().instance().set(&creation_fee_key(), &creation_fee);
+    }
+
+    /// Update the treasury address. Requires admin auth.
+    pub fn set_treasury(env: Env, admin: Address, treasury: Address) {
+        require_admin(&env, &admin);
+        env.storage().instance().set(&treasury_key(), &treasury);
+    }
+
+    /// Return the current creation fee.
+    pub fn get_creation_fee(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&creation_fee_key())
+            .unwrap_or(0)
+    }
+
+    /// Return the treasury address.
+    pub fn get_treasury(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&treasury_key())
+            .expect("treasury not set")
+    }
+
+    /// Return the USDC token address.
+    pub fn get_usdc_token(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&usdc_token_key())
+            .expect("usdc token not set")
+    }
+
+    // -----------------------------------------------------------------------
+    // Schema migration
+    // -----------------------------------------------------------------------
+
+    /// Migrate a legacy (pre-version) invoice to the current schema.
+    ///
+    /// Reads the stored invoice under the old layout, rewrites it with
+    /// `version = 1` and all other fields preserved. Safe to call multiple
+    /// times — already-migrated invoices are a no-op. Requires admin auth.
+    pub fn migrate_invoice(env: Env, admin: Address, invoice_id: u64) {
+        require_admin(&env, &admin);
+
+        // Already migrated?
+        if let Some(invoice) = env
+            .storage()
+            .persistent()
+            .get::<_, Invoice>(&invoice_key(invoice_id))
+        {
+            if invoice.version >= 1 {
+                return;
+            }
+        }
+
+        // Read legacy (pre-version) format and upgrade.
+        let legacy: LegacyInvoice = env
+            .storage()
+            .persistent()
+            .get(&invoice_key(invoice_id))
+            .expect("invoice not found");
+
+        let invoice = Invoice::from_legacy(legacy, &env);
+        env.storage()
+            .persistent()
+            .set(&invoice_key(invoice_id), &invoice);
     }
 
     // -----------------------------------------------------------------------
@@ -220,7 +306,8 @@ impl SplitContract {
             options.bonus_max_payers,
             options.prerequisite_id,
             options.tranches,
-            options.approver,
+            options.co_signers,
+            options.required_signatures,
         )
     }
 
@@ -238,7 +325,8 @@ impl SplitContract {
         bonus_max_payers: u32,
         prerequisite_id: Option<u64>,
         tranches: Vec<Tranche>,
-        approver: Option<Address>,
+        co_signers: Vec<Address>,
+        required_signatures: u32,
     ) -> u64 {
         assert!(
             recipients.len() == amounts.len(),
@@ -259,6 +347,27 @@ impl SplitContract {
         if !tranches.is_empty() {
             let total_bps: u32 = tranches.iter().map(|t| t.basis_points).sum();
             assert!(total_bps == 10_000, "tranches must sum to 10000 basis points");
+        }
+
+        // Charge configurable creation fee in USDC.
+        let creation_fee: i128 = env
+            .storage()
+            .instance()
+            .get(&creation_fee_key())
+            .unwrap_or(0);
+        if creation_fee > 0 {
+            let usdc_token: Address = env
+                .storage()
+                .instance()
+                .get(&usdc_token_key())
+                .expect("usdc token not set");
+            let treasury: Address = env
+                .storage()
+                .instance()
+                .get(&treasury_key())
+                .expect("treasury not set");
+            let usdc_client = token::Client::new(env, &usdc_token);
+            usdc_client.transfer(&creator, &treasury, &creation_fee);
         }
 
         let id: u64 = env
@@ -289,6 +398,7 @@ impl SplitContract {
         }
 
         let invoice = Invoice {
+            version: 1u32,
             creator: creator.clone(),
             co_creators,
             recipients: recipients.clone(),
@@ -309,8 +419,9 @@ impl SplitContract {
             prerequisite_id,
             tranches,
             released_bps: 0,
-            approver,
-            approved: false,
+            co_signers,
+            required_signatures,
+            signatures: Vec::new(env),
         };
 
         save_invoice(env, id, &invoice);
@@ -343,7 +454,8 @@ impl SplitContract {
                 0,
                 None,
                 Vec::new(&env),
-                None,
+                Vec::new(&env),
+                0,
             );
             ids.push_back(id);
         }
@@ -385,7 +497,8 @@ impl SplitContract {
             0,
             None,
             Vec::new(&env),
-            None,
+            Vec::new(&env),
+            0,
         );
 
         if months > 1 {
@@ -478,7 +591,10 @@ impl SplitContract {
                 .persistent()
                 .has(&invoice_group_key(invoice_id));
             let guarded =
-                invoice.prerequisite_id.is_some() || !invoice.tranches.is_empty() || in_group;
+                invoice.prerequisite_id.is_some()
+                    || !invoice.tranches.is_empty()
+                    || in_group
+                    || !invoice.co_signers.is_empty();
             if guarded {
                 save_invoice(env, invoice_id, &invoice);
             } else {
@@ -487,6 +603,39 @@ impl SplitContract {
         } else {
             save_invoice(env, invoice_id, &invoice);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Co-signer approval & Release
+    // -----------------------------------------------------------------------
+
+    /// Record a co-signer's approval to release an invoice.
+    ///
+    /// Only addresses in `co_signers` may call this. Once `required_signatures`
+    /// unique co-signers have approved, the release guard is satisfied.
+    pub fn sign_release(env: Env, invoice_id: u64, signer: Address) {
+        require_not_paused(&env);
+        signer.require_auth();
+
+        let mut invoice = load_invoice(&env, invoice_id);
+
+        assert!(
+            invoice.status == InvoiceStatus::Pending,
+            "invoice is not pending"
+        );
+        assert!(!invoice.co_signers.is_empty(), "no co-signers required");
+        assert!(
+            invoice.co_signers.iter().any(|c| c == signer),
+            "not an authorized co-signer"
+        );
+        assert!(
+            !invoice.signatures.iter().any(|s| s == signer),
+            "already signed"
+        );
+
+        invoice.signatures.push_back(signer.clone());
+        save_invoice(&env, invoice_id, &invoice);
+        append_audit_entry(&env, invoice_id, symbol_short!("sign_rel"), &signer);
     }
 
     // -----------------------------------------------------------------------
@@ -533,6 +682,14 @@ impl SplitContract {
             .get::<(Symbol, u64), u64>(&invoice_group_key(invoice_id))
         {
             assert!(group_all_funded(&env, group_id), "group members not fully funded");
+        }
+
+        // Co-signer approval check.
+        if !invoice.co_signers.is_empty() {
+            assert!(
+                invoice.signatures.len() >= invoice.required_signatures,
+                "not enough co-signer approvals"
+            );
         }
 
         Self::_release(&env, invoice_id, &mut invoice, &caller);
@@ -715,7 +872,8 @@ impl SplitContract {
                 0,
                 None,
                 Vec::new(env),
-                None,
+                Vec::new(env),
+                0,
             );
             env.storage()
                 .persistent()
@@ -915,7 +1073,8 @@ impl SplitContract {
             0,
             None,
             Vec::new(&env),
-            None,
+            Vec::new(&env),
+            0,
         )
     }
 

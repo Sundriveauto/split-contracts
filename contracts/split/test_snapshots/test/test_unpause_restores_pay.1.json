@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 7,
+    "address": 8,
     "nonce": 0
   },
   "auth": [
@@ -155,9 +155,25 @@
                     },
                     {
                       "key": {
+                        "symbol": "co_signers"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "prerequisite_id"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
                     },
                     {
                       "key": {
@@ -522,6 +538,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "co_signers"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "completion_time"
                       },
                       "val": {
@@ -646,6 +670,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "signatures"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
@@ -674,6 +714,14 @@
                       },
                       "val": {
                         "vec": []
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "version"
+                      },
+                      "val": {
+                        "u32": 1
                       }
                     }
                   ]
@@ -912,6 +960,33 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "crt_fee"
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 0
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "treasury"
+                        },
+                        "val": {
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "usdc_tok"
+                        },
+                        "val": {
+                          "address": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF"
                         }
                       }
                     ]

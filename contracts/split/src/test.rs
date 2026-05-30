@@ -6,7 +6,7 @@ use soroban_sdk::{
     token::{Client as TokenClient, StellarAssetClient},
     Address, Env, Vec,
 };
-use types::{InvoiceOptions, Tranche};
+use types::InvoiceOptions;
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -38,15 +38,16 @@ fn token_client<'a>(env: &'a Env, token_id: &Address) -> TokenClient<'a> {
 
 fn default_options(env: &Env) -> InvoiceOptions {
     InvoiceOptions {
-        co_creators: Vec::new(env),
-        allow_early_withdrawal: false,
-        bonus_pool: 0,
-        bonus_max_payers: 0,
-        prerequisite_id: None,
-        tranches: Vec::new(env),
-        approver: None,
+            co_creators: Vec::new(env),
+            allow_early_withdrawal: false,
+            bonus_pool: 0,
+            bonus_max_payers: 0,
+            prerequisite_id: None,
+            tranches: Vec::new(env),
+            co_signers: Vec::new(env),
+            required_signatures: 0,
+        }
     }
-}
 
 /// Create a basic single-recipient invoice with default optional params.
 fn make_invoice(
@@ -472,7 +473,8 @@ fn test_pause_blocks_pay() {
     StellarAssetClient::new(&env, &token_id).mint(&payer, &500);
     env.ledger().set_timestamp(1_000);
 
-    c.initialize(&admin);
+    let treasury = Address::generate(&env);
+    c.initialize(&admin, &0_i128, &treasury, &token_id);
     let id = make_invoice(&env, &c, &creator, &recipient, 200, &token_id, 9_999);
     c.pause(&admin);
 
@@ -492,7 +494,8 @@ fn test_unpause_restores_pay() {
     StellarAssetClient::new(&env, &token_id).mint(&payer, &500);
     env.ledger().set_timestamp(1_000);
 
-    c.initialize(&admin);
+    let treasury = Address::generate(&env);
+    c.initialize(&admin, &0_i128, &treasury, &token_id);
     let id = make_invoice(&env, &c, &creator, &recipient, 200, &token_id, 9_999);
 
     c.pause(&admin);
@@ -513,7 +516,8 @@ fn test_get_invoice_works_while_paused() {
 
     env.ledger().set_timestamp(1_000);
 
-    c.initialize(&admin);
+    let treasury = Address::generate(&env);
+    c.initialize(&admin, &0_i128, &treasury, &token_id);
     let id = make_invoice(&env, &c, &creator, &recipient, 200, &token_id, 9_999);
     c.pause(&admin);
 
@@ -602,7 +606,8 @@ fn test_bonus_pool_distributed_to_first_payer() {
             bonus_max_payers: 1,
             prerequisite_id: None,
             tranches: Vec::new(&env),
-            approver: None,
+            co_signers: Vec::new(&env),
+            required_signatures: 0,
         },
     );
 
@@ -839,7 +844,8 @@ fn test_release_blocked_by_prerequisite() {
             bonus_max_payers: 0,
             prerequisite_id: Some(id_a),
             tranches: Vec::new(&env),
-            approver: None,
+            co_signers: Vec::new(&env),
+            required_signatures: 0,
         },
     );
 
@@ -883,7 +889,8 @@ fn test_release_succeeds_after_prerequisite_released() {
             bonus_max_payers: 0,
             prerequisite_id: Some(id_a),
             tranches: Vec::new(&env),
-            approver: None,
+            co_signers: Vec::new(&env),
+            required_signatures: 0,
         },
     );
 
@@ -960,7 +967,8 @@ fn test_tranches_partial_then_full_release() {
             bonus_max_payers: 0,
             prerequisite_id: None,
             tranches: tranches.clone(),
-            approver: None,
+            co_signers: Vec::new(&env),
+            required_signatures: 0,
         },
     );
 
@@ -1019,7 +1027,8 @@ fn test_release_before_any_tranche_unlocked_panics() {
             bonus_max_payers: 0,
             prerequisite_id: None,
             tranches: tranches.clone(),
-            approver: None,
+            co_signers: Vec::new(&env),
+            required_signatures: 0,
         },
     );
 
@@ -1101,131 +1110,131 @@ fn test_reputation_is_per_address() {
 }
 
 // ---------------------------------------------------------------------------
-// Issue #25: Approver tests
+// Creation fee
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic(expected = "awaiting approval")]
-fn test_release_with_unapproved_approver_panics() {
+fn test_creation_fee_charged_to_treasury() {
     let (env, contract_id, token_id) = setup();
     let c = client(&env, &contract_id);
     let tk = token_client(&env, &token_id);
 
+    let admin = Address::generate(&env);
     let creator = Address::generate(&env);
-    let approver = Address::generate(&env);
-    let payer = Address::generate(&env);
+    let treasury = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    StellarAssetClient::new(&env, &token_id).mint(&payer, &500);
+    let sa = StellarAssetClient::new(&env, &token_id);
+    sa.mint(&creator, &1_000);
+
     env.ledger().set_timestamp(1_000);
 
-    // Create an invoice with an approver set and a tranche to prevent auto-release
-    let mut recipients = Vec::new(&env);
-    recipients.push_back(recipient.clone());
-    let mut amounts = Vec::new(&env);
-    amounts.push_back(100);
-    let mut tranches = Vec::new(&env);
-    tranches.push_back(Tranche { timestamp: 2_000, basis_points: 10_000 });
-    let mut options = default_options(&env);
-    options.approver = Some(approver.clone());
-    options.tranches = tranches;
-    let id = c.create_invoice(&creator, &recipients, &amounts, &token_id, &2_000, &options);
+    c.initialize(&admin, &50_i128, &treasury, &token_id);
 
-    // Fund the invoice
-    tk.transfer(&payer, &contract_id, &100);
-    c.pay(&payer, &id, &100_i128, &0_u64);
+    assert_eq!(c.get_creation_fee(), 50);
+    assert_eq!(c.get_treasury(), treasury);
+    assert_eq!(c.get_usdc_token(), token_id);
 
-    // Attempt release without approval should panic
-    c.release(&id);
+    let id = make_invoice(&env, &c, &creator, &recipient, 200, &token_id, 9_999);
+
+    // Treasury received 50 USDC creation fee.
+    assert_eq!(tk.balance(&treasury), 50);
+    // Creator paid 50 USDC fee; invoice amount stays in creator wallet until payers pay.
+    assert_eq!(tk.balance(&creator), 950);
+    assert_eq!(c.get_invoice(&id).status, InvoiceStatus::Pending);
 }
 
 #[test]
-fn test_approve_invoice_then_release() {
+fn test_creation_fee_zero_by_default() {
     let (env, contract_id, token_id) = setup();
     let c = client(&env, &contract_id);
     let tk = token_client(&env, &token_id);
 
+    let admin = Address::generate(&env);
     let creator = Address::generate(&env);
-    let approver = Address::generate(&env);
-    let payer = Address::generate(&env);
+    let treasury = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    StellarAssetClient::new(&env, &token_id).mint(&payer, &500);
+    let sa = StellarAssetClient::new(&env, &token_id);
+    sa.mint(&creator, &1_000);
+
     env.ledger().set_timestamp(1_000);
 
-    // Create an invoice with an approver set and a tranche to prevent auto-release
-    let mut recipients = Vec::new(&env);
-    recipients.push_back(recipient.clone());
-    let mut amounts = Vec::new(&env);
-    amounts.push_back(100);
-    let mut tranches = Vec::new(&env);
-    tranches.push_back(Tranche { timestamp: 1_000, basis_points: 10_000 });
-    let mut options = default_options(&env);
-    options.approver = Some(approver.clone());
-    options.tranches = tranches;
-    let id = c.create_invoice(&creator, &recipients, &amounts, &token_id, &2_000, &options);
+    c.initialize(&admin, &0_i128, &treasury, &token_id);
 
-    // Fund the invoice
-    tk.transfer(&payer, &contract_id, &100);
-    c.pay(&payer, &id, &100_i128, &0_u64);
+    let id = make_invoice(&env, &c, &creator, &recipient, 200, &token_id, 9_999);
 
-    // Verify invoice has approver set and is not approved
-    let invoice = c.get_invoice(&id);
-    assert_eq!(invoice.approver, Some(approver.clone()));
-    assert!(!invoice.approved);
-
-    // Approve the invoice
-    c.approve_invoice(&id);
-
-    // Verify invoice is now approved
-    let invoice = c.get_invoice(&id);
-    assert!(invoice.approved);
-
-    // Release should now succeed
-    c.release(&id);
-
-    // Verify invoice is released
-    let invoice = c.get_invoice(&id);
-    assert_eq!(invoice.status, InvoiceStatus::Released);
+    // No fee deducted when creation_fee is 0.
+    assert_eq!(tk.balance(&treasury), 0);
+    assert_eq!(tk.balance(&creator), 1000);
+    assert_eq!(c.get_invoice(&id).status, InvoiceStatus::Pending);
 }
 
 #[test]
-fn test_invoice_without_approver_releases_normally() {
+fn test_set_creation_fee_updates_fee() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+
+    c.initialize(&admin, &10_i128, &treasury, &token_id);
+    assert_eq!(c.get_creation_fee(), 10);
+
+    c.set_creation_fee(&admin, &25_i128);
+    assert_eq!(c.get_creation_fee(), 25);
+}
+
+#[test]
+fn test_set_treasury_updates_treasury() {
+    let (env, contract_id, token_id) = setup();
+    let c = client(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let treasury1 = Address::generate(&env);
+    let treasury2 = Address::generate(&env);
+
+    c.initialize(&admin, &10_i128, &treasury1, &token_id);
+    assert_eq!(c.get_treasury(), treasury1);
+
+    c.set_treasury(&admin, &treasury2);
+    assert_eq!(c.get_treasury(), treasury2);
+}
+
+#[test]
+fn test_creation_fee_charged_per_invoice_in_batch() {
     let (env, contract_id, token_id) = setup();
     let c = client(&env, &contract_id);
     let tk = token_client(&env, &token_id);
 
+    let admin = Address::generate(&env);
     let creator = Address::generate(&env);
-    let payer = Address::generate(&env);
+    let treasury = Address::generate(&env);
     let recipient = Address::generate(&env);
 
-    StellarAssetClient::new(&env, &token_id).mint(&payer, &500);
+    let sa = StellarAssetClient::new(&env, &token_id);
+    sa.mint(&creator, &1_000);
+
     env.ledger().set_timestamp(1_000);
 
-    // Create an invoice without approver and with a tranche to test manual release
+    c.initialize(&admin, &10_i128, &treasury, &token_id);
+
+    // create_batch creates 2 invoices, each should incur a 10 unit fee.
     let mut recipients = Vec::new(&env);
     recipients.push_back(recipient.clone());
     let mut amounts = Vec::new(&env);
-    amounts.push_back(100);
-    let mut tranches = Vec::new(&env);
-    tranches.push_back(Tranche { timestamp: 1_000, basis_points: 10_000 });
-    let mut options = default_options(&env);
-    options.tranches = tranches;
-    let id = c.create_invoice(&creator, &recipients, &amounts, &token_id, &2_000, &options);
+    amounts.push_back(100_i128);
+    let params = types::CreateInvoiceParams {
+        recipients,
+        amounts,
+        token: token_id.clone(),
+        deadline: 9_999,
+    };
+    let mut invoices = Vec::new(&env);
+    invoices.push_back(params.clone());
+    invoices.push_back(params);
+    c.create_batch(&creator, &invoices);
 
-    // Fund the invoice
-    tk.transfer(&payer, &contract_id, &100);
-    c.pay(&payer, &id, &100_i128, &0_u64);
-
-    // Verify invoice has no approver
-    let invoice = c.get_invoice(&id);
-    assert_eq!(invoice.approver, None);
-    assert!(!invoice.approved);
-
-    // Release should succeed without needing approval
-    c.release(&id);
-
-    // Verify invoice is released
-    let invoice = c.get_invoice(&id);
-    assert_eq!(invoice.status, InvoiceStatus::Released);
+    // 2 invoices x 10 fee = 20 total.
+    assert_eq!(tk.balance(&treasury), 20);
 }
